@@ -1,19 +1,23 @@
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from typing import List
 
-from fastapi import FastAPI, Depends, HTTPException
+import jwt
+from fastapi import FastAPI, Depends, HTTPException, requests
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 import uvicorn
 from sqlalchemy.testing.plugin.plugin_base import logging
 from fastapi.middleware.cors import CORSMiddleware
 
+from ai_moderation_bot.config import JWT_SECRET, ALGORITHM
 from ai_moderation_bot.data_models import UserCreate, UserLogin, UpdateSafetySetting
 from ai_moderation_bot.db import get_api_session
 from ai_moderation_bot.db_models import User, ContentAllowed, ContentBlocked
-from ai_moderation_bot.services import (insert_into_db, encryption, add_safety_settings_to_db, update_safety_settings_in_db,
-                                        get_latest_settings)
+from ai_moderation_bot.services import (insert_into_db, encryption, add_safety_settings_to_db,
+                                        update_safety_settings_in_db,
+                                        get_latest_settings, validate_jwt_token)
 
 
 @asynccontextmanager
@@ -50,11 +54,22 @@ async def login(user: UserLogin, session: Session = Depends(get_api_session)):
     if not db_user:
         logging.error("Incorrect username or password")
         raise HTTPException(status_code=400, detail="Incorrect username or password")
-    return {"username": db_user.username, "role": db_user.role}
+
+    payload = {
+        "email": user.username,
+        "exp": datetime.now() + timedelta(minutes=30)
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
+
+    return {"username": db_user.username, "role": db_user.role, "token": token}
 
 
 @app.get("/content-stats")
-async def get_content_stats(db: Session = Depends(get_api_session)):
+async def get_content_stats(request: requests.Request, db: Session = Depends(get_api_session)):
+    data = await validate_jwt_token(request.headers)
+    if not data:
+        raise HTTPException(status_code=401, detail="Invalid Authentication token!")
+
     allowed_counts = db.query(
         ContentAllowed.tg_users_nickname,
         func.count(ContentAllowed.id).label('allowed_count')
@@ -81,7 +96,11 @@ async def get_content_stats(db: Session = Depends(get_api_session)):
 
 
 @app.post('/update-safety-settings')
-async def update_safe_settings(updated_settings: List[UpdateSafetySetting]):
+async def update_safe_settings(request: requests.Request, updated_settings: List[UpdateSafetySetting]):
+    data = await validate_jwt_token(request.headers)
+    if not data:
+        raise HTTPException(status_code=401, detail="Invalid Authentication token!")
+
     update_safety_settings_in_db(updated_settings)
     return  {"message": "Settings updated successfully"}
 

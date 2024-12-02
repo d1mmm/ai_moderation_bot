@@ -1,8 +1,11 @@
 import logging
+from datetime import datetime
 from typing import List
 
 import bcrypt
+import jwt
 import vertexai
+from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from vertexai.generative_models import GenerativeModel
@@ -10,7 +13,7 @@ from google.oauth2 import service_account
 from vertexai.generative_models._generative_models import SafetyRating
 from vertexai.preview import generative_models
 
-from ai_moderation_bot.config import KEY
+from ai_moderation_bot.config import KEY, JWT_SECRET, ALGORITHM
 from ai_moderation_bot.data_models import UpdateSafetySetting
 from ai_moderation_bot.db import get_session
 from ai_moderation_bot.config import VERTEX_AI_ID, CREDENTIALS
@@ -144,6 +147,31 @@ def analyze_content(content):
     if result:
         return False
     return True
+
+
+async def validate_jwt_token(headers):
+    token = None
+    if "Authorization" in headers:
+        token = headers["Authorization"].split(" ")[0]
+        if not token:
+            raise HTTPException(status_code=400, detail="Authentication Token is missing!")
+
+    try:
+        data = jwt.decode(token, JWT_SECRET, ALGORITHM)
+        current_email = data["email"]
+        if current_email is None:
+            raise HTTPException(status_code=401, detail="Invalid Authentication token!")
+
+        expiration_datetime = datetime.fromtimestamp(data["exp"])
+        current_time = datetime.now()
+        if current_time > expiration_datetime:
+            raise HTTPException(status_code=401, detail="Token has expired")
+
+        return data
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token is invalid")
 
 
 def encryption(password):

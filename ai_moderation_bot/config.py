@@ -5,7 +5,7 @@ import os
 
 JWT_SECRET = ("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2Mj"
               "M5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c")
-KEY = bcrypt.gensalt()
+KEY = b'$2b$12$G4Z3Q731NuLWY0EH8dRahe'
 ALGORITHM = "HS256"
 
 load_dotenv()
